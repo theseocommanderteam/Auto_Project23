@@ -1,0 +1,326 @@
+import time
+import base64
+import openai
+import os
+import random
+import requests
+import json
+import re
+from googleapiclient.discovery import build
+from io import BytesIO
+import textwrap
+import io
+from PIL import Image, ImageDraw, ImageFont
+
+lang = "English"
+BORDER_SIZE = 10
+BORDER_OFFSET = 50
+MIN_WIDTH, MIN_HEIGHT = 800, 600
+MAX_WIDTH, MAX_HEIGHT = 1000, 800
+COLOR_CODES = [
+   "#118DFC", "#074550", "#F17825",
+    "#FF5733", "#FFC300", "#52BE80",
+    "#3498DB", "#AF7AC", "#E74c3c",
+    "#F39C12", "#16A085", "#5499C7",
+    # "#D35400",
+]
+TEXT_COLOR = "white"
+BORDER_COLOR = "white"
+FONT_SIZE = 40
+MAX_LINE_LENGTH = 25
+LINE_HEIGHT = 20
+FONT_STYLE = "arial.ttf"
+BOLD_FONT_STYLE = "arialbd.ttf"
+PADDING = 50
+openai.api_key = "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"
+openai_model_name = "gpt-3.5-turbo-16k-0613"
+youtube_api_keys = [
+"AIzaSyCtGZZOmu1mJAgTd2QXHenXuL5FqCUttPs"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+]
+
+google_cse_id = "21edecee03b734bad"
+google_cse_api_keys = [
+    "AIzaSyCtGZZOmu1mJAgTd2QXHenXuL5FqCUttPs"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+]
+
+
+username = "famouscelebrity"
+app_password = "DbFv XTq3 R9Gx CGOv 7lne oIVH"
+site_url = "https://thestarbio.net/"
+
+def create_title_image(title: str):
+    background_color = random.choice(COLOR_CODES)
+    wrapped_text = "\n".join(textwrap.wrap(title, width=MAX_LINE_LENGTH))
+    font = ImageFont.truetype(FONT_STYLE, FONT_SIZE)
+    bold_font = ImageFont.truetype(BOLD_FONT_STYLE, FONT_SIZE)
+    text_bbox = ImageDraw.Draw(Image.new("RGB", (1, 1))).multiline_textbbox((0, 0), wrapped_text, font=bold_font, spacing=LINE_HEIGHT)
+
+    text_width, text_height = text_bbox[2], text_bbox[3]
+    img_width = max(MIN_WIDTH, min(text_width + 2 * BORDER_SIZE + 2 * BORDER_OFFSET + 2 * PADDING, MAX_WIDTH))
+    img_height = max(MIN_WIDTH, min(text_height + 2 * BORDER_SIZE + 2 * BORDER_OFFSET + 2 * PADDING, MAX_HEIGHT))
+
+    img = Image.new("RGB", (img_width, img_height), color=background_color)
+    draw = ImageDraw.Draw(img)
+    draw.rectangle([BORDER_OFFSET, BORDER_OFFSET, img_width - BORDER_OFFSET - 1, img_height - BORDER_OFFSET - 1], width=BORDER_SIZE, outline=BORDER_COLOR)
+
+    text_x = (img_width - text_width) // 2
+    text_y = (img_height - text_height) // 2
+    draw.multiline_text((text_x, text_y), wrapped_text, font=bold_font, fill=TEXT_COLOR, align="center", spacing=LINE_HEIGHT)
+
+
+    # save the image to a BytesTO buffer
+    buffer = io.BytesIO()
+    img.save(buffer, format="PNG")
+    buffer.seek(0)
+
+    return buffer
+
+def image_data_uri(buffer):
+    return f"data:image/png;base64,{base64.b64encode(buffer.getvalue()).decode()}"
+
+
+def get_image(keyword, num_attempts=5):
+    for api_key in google_cse_api_keys:
+        try:
+            service = build("customsearch", "v1", developerKey=api_key)
+            res = service.cse().list(q=keyword, cx=google_cse_id, searchType='image', num=num_attempts).execute()
+            items = res['items']
+
+            for i in range(num_attempts):
+                try:
+                    url = items[i]['link']
+                    response = requests.get(url)
+                    img = Image.open(BytesIO(response.content))
+                    if img.mode in ("RGBA", "p"):
+                        img = img.convert("RGB")
+                    safe_keyword = re.sub('[^A-Za-z0-9]+', '-', keyword)
+                    img_filename = f"{safe_keyword}_feature_image_{i}.jpg"
+                    while os.path.exists(img_filename):
+                        img_filename = f"{safe_keyword}_feature_image_{str(random.randint(1000000000, 999999999))}.jpg"
+                    img.save(img_filename,optimize=True, quality=85)
+                    return img_filename
+                except Exception as e:
+                    print(f"Failed attempt {i+1}: {e}")
+                    continue
+
+            # If all attempts fail, return None
+            return None
+
+        except Exception as e:
+            print(f"Failed to retrieve search results: {e}")
+            return None
+
+def get_youtube_videos(keyword, count=1):
+    for api_key in youtube_api_keys:
+        try:
+            youtube = build("youtube", developerKey=api_key)
+            search_response = youtube.search().list(q=keyword, part="id,snippet", maxResults=count, type="video",regionCode="US").execute()
+            videos = []
+            for item in search_response.get("items", []):
+                video_id = item["id"]["videoId"]
+                title = item["snippet"]["title"]
+                videos.append((title, f"https://www.youtube.com/embeb/{video_id}"))
+            return videos
+        except Exception as e:
+            continue
+    return []
+
+
+
+def generate_article_parts(prompt):
+    max_retries = 3
+    for i in range(max_retries):
+        try:
+            messages = [{'role': 'system','content': 'English'},# translate English to French
+                        {'role': 'user', 'content': prompt}]
+            response = openai.ChatCompletion.create(
+                engine=openai_model_name,  # engine will be model name
+                messages=messages,
+                max_tokens=5000,
+                temperature=0.9,
+                top_p=1
+            )
+            text = response['choices'][0]['message']['content'].strip()
+            # Remove unwanted headings
+            text = text.replace("<h2>Conclusion</h2>", "").replace("<h2>Final Thought</h2>", "").replace("<h2>Final Thoughts</h2>", ""),
+            text = text.replace("<h3>Conclusion</h3>", "").replace("<h3>Final Thought</h3>", "").replace("<h3>Final Thoughts</h3>", ""),
+            return text
+        except Exception as e:
+            if i < max_retries - 1: # i is  zero indexed
+                time.sleep(20 * (2 ** i)) # sleep for 20,40,80 seconds respectively
+                continue
+            else:
+                raise
+
+def generate_title_and_article(keyword):
+    raw_title = generate_article_parts(
+        f"write in '{lang}' language. Generate a compelling ans seo friendly title for blog article focusing on '{keyword}'.The title will be 60 character")
+    title = raw_title.replace('"', '')
+
+    introduction_prompt = f"write in '{lang}' language. Craft a captivating introduction for the blog article on '{keyword}'."
+    introduction = generate_article_parts(introduction_prompt)
+
+    main_body_prompt = f"write in '{lang}' language. Generate a detailed and engaging main body for a blog article centered '{keyword}'"
+
+    main_body = generate_article_parts(main_body_prompt)
+    main_body = main_body.replace("<h1>","<h2 style='text-align:center;'>", 1).replace("</h1>", "</h2>", 1)
+
+    videos = get_youtube_videos(keyword, count=1)
+    video_title, embed_url = videos[0]
+    video_section = f"<h3>{video_title}</h3>"
+    video_section +=f'<iframe width="560" height="315" src="{embed_url}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>'
+
+    faq_prompt = f"write in '{lang}' language. generate relevant FAQ question and answer on this '{keyword}'. Generate 3-6 question and answer"
+    faq = generate_article_parts(faq_prompt)
+    conclusion_prompt = f"write in '{lang}' language. Conclude the blog article concisely, focusing on'{keyword}'. The conclusion will be 2 para"
+
+
+
+    conclusion = generate_article_parts(conclusion_prompt)
+
+    # Generate image for the article title
+    title_image_buffer = create_title_image(title)
+    title_image_data_uri = image_data_uri(title_image_buffer)
+
+
+    article = f"{introduction}\n\n<img src=\"{title_image_data_uri}\" alt=\"{title}\"/>\n\n{main_body}\n\n{video_section}\n\n{faq}\n\n{conclusion}"
+
+    return title, article
+
+def create_category(category_name):
+    api_url = f"{site_url}/wp-json/wp/v2/categories"
+    headers = {
+        "Authorization": f"Basic {base64.b64encode(f'{username}:{app_password}'.encode('utf-8')).decode('utf-8')}",
+        "Content-Type": "application/json"
+    }
+
+    data = {
+        "name": category_name
+    }
+
+    response = requests.post(api_url, headers=headers, data=json.dumps(data))
+    if response.status_code ==201:
+        return response.json()["id"]
+    else:
+        return None
+
+def get_category_id(category_name):
+    api_url = f"{site_url}/wp-json/wp/v2/categories?search={category_name}"
+    response = requests.get(api_url)
+
+    if response.status_code == 200:
+        categories = response.json()
+        for category in categories:
+            if category["name"].lower() == category_name.lower():
+                return category["id"]
+    return None
+
+def upload_image(image_path, post_id):
+    api_url = f"{site_url}/wp-json/wp/v2/media"
+    headers = {
+        "Authorization": f"Basic {base64.b64encode(f'{username}:{app_password}'.encode('utf-8')).decode('utf-8')}",
+        "Content-Type": "image/jpg",
+        "Content-Disposition": f'attachmen; filename="{post_id}.jpg"'
+    }
+    with open(image_path, 'rb') as img:
+        response = requests.post(api_url, headers=headers, data=img)
+
+    if response.status_code == 201:
+        return response.json()["id"]
+    else:
+        return None
+
+def publish_to_wordpress(title, content, category_id, image_id, keyword):
+    api_url = f"{site_url}/wp-json/wp/v2/posts"
+    headers = {
+        "Authorization": f"Basic {base64.b64encode(f'{username}:{app_password}'.encode('utf-8')).decode('utf-8')}",
+        "Content-Type": "application/json"
+    }
+    data = {
+        "title": title,
+        "content": content,
+        "slug": keyword,
+        "status": "draft",
+        "categories": [category_id],
+        "featured_media": image_id,
+    }
+    response = requests.post(api_url, headers=headers, data=json.dumps(data))
+
+    if response.status_code ==201:
+        print(f"Article Published drafted. URL: {response.json()['link']}, keyword: '{keyword}'.")
+        return response.json()["id"]
+    else:
+        print(f"Failed to publish the article '{title}' with keyword '{keyword}'.")
+        return None
+
+if __name__=="__main__":
+    keyword_count = int(input("Enter the number of keywords (1-1000): " ))
+    keywords = [input("Enter keyword: ").strip() for _ in range(keyword_count)]
+
+    category_name = input("Enter category name: ").strip()
+    category_id = get_category_id(category_name)
+
+    if not category_id:
+        category_id = create_category(category_name)
+        if not category_id:
+            exit(1)
+    for keyword in keywords:
+        post_id = f"{keyword}_{int(time.time())}"
+        title, article = generate_title_and_article(keyword)
+        image_path = get_image(keyword)
+        image_id = upload_image(image_path, post_id) if image_path else None
+        title = title.title()
+        post_id = publish_to_wordpress(title, article, category_id, image_id, keyword)
+        os.remove(image_path) if image_path else None
+
